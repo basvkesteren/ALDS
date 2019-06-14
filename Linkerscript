@@ -1,0 +1,295 @@
+/*
+    ALDS (ARM LPC Driver Set)
+
+    Linkerscript:
+                 This file tells the linker how to stuff all the code together..
+
+    copyright:
+              Copyright (c) 2006-2008 Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>
+
+              This program comes with ABSOLUTELY NO WARRANTY; for details see the file LICENSE.
+              This program is free software; you can redistribute it and/or modify it under the terms
+              of the GNU General Public License as published by the Free Software Foundation; either
+              version 2 of the License, or (at your option) any later version.
+
+    remarks:
+            -This file has to be preprocessed first before passed on to the linker. See the Makefile for
+             details
+
+*/
+#include <config.h>
+
+OUTPUT_FORMAT("elf32-littlearm", "elf32-bigarm", "elf32-littlearm")
+OUTPUT_ARCH(arm)
+ENTRY(_start)
+STARTUP(crt0.o)
+
+MEMORY
+{
+    /* Set size and location of RAM and ROM */
+    rom(rx) : ORIGIN = __MCU_ROM_BASE, LENGTH = __MCU_ROM_SIZE * 1024
+    ram(rw) : ORIGIN = __MCU_RAM_BASE, LENGTH = __MCU_RAM_SIZE * 1024
+}
+
+/* Now define the stacksizes. Depending on some configuration settings
+   (see config.h), there are some minimal size requirements, which we
+   check here */
+#if (CRASHACTION) & C_CONTEXT
+/* When C_CONTEXT is enabled,(see config.h), the minimal stacksize for the
+   ABT and UND stacks is 24 bytes (6 words) */
+#if STACKSIZE_ABT < 0x18
+#undef STACKSIZE_ABT
+#define STACKSIZE_ABT 0x18
+#warning "stacksize for ABT enlarged to 24 bytes"
+#endif
+#if STACKSIZE_UND < 0x18
+#undef STACKSIZE_UND
+#define STACKSIZE_UND 0x18
+#warning "stacksize for UND enlarged to 24 bytes"
+#endif
+#endif
+#if HANDLE_SWI
+/* When SWI handling is enabled, we need a SVC stack with room for 3 words */
+#if STACKSIZE_SVC < 0xC
+#undef STACKSIZE_SVC
+#define STACKSIZE_SVC 0xC
+#warning "stacksize for SVC enlarged to 12 bytes"
+#endif
+#endif
+
+/* OK, fill in the values */
+__STACK_SIZE_FIQ__          = STACKSIZE_FIQ;
+__STACK_SIZE_IRQ__          = STACKSIZE_IRQ;
+__STACK_SIZE_SUPERVISOR__   = STACKSIZE_SVC;
+__STACK_SIZE_ABORT__        = STACKSIZE_ABT;
+__STACK_SIZE_UNDEFINED__    = STACKSIZE_UND;
+__STACK_SIZE_SYS__          = STACKSIZE_SYS;
+
+/* Stack location setup. Stack moves from top of RAM down. Layout is as follows:
+                    __stack_start__ & __stack_start_fiq__
+    [fiq        ]
+                    __stack_start_irq__
+    [irq        ]
+                    __stack_start_supervisor__
+    [supervisor ]
+                    __stack_start_abort__
+    [abort      ]
+                    __stack_start_undefined__
+    [undefined  ]
+                    __stack_start_sys__
+    [sys        ]
+                    __stack_end__
+   Each section starts at it's top location (the __stack_start_*__ address and
+   moves down from there. In case of a stackoverflow one stack will overwrite
+   the other (or, in case of the sys stack overflowing, you'll overwrite the heap).
+   Either way, it's not a good thing.. */
+__stack_start__             = 0x40000000 + (__MCU_RAM_SIZE * 1024) - STACK_OFFSET;
+__stack_start_fiq__         = __stack_start__;
+__stack_start_irq__         = __stack_start_fiq__ - __STACK_SIZE_FIQ__;
+__stack_start_supervisor__  = __stack_start_irq__ - __STACK_SIZE_IRQ__;
+__stack_start_abort__       = __stack_start_supervisor__ - __STACK_SIZE_SUPERVISOR__;
+__stack_start_undefined__   = __stack_start_abort__ - __STACK_SIZE_ABORT__;
+__stack_start_sys__         = __stack_start_undefined__ - __STACK_SIZE_UNDEFINED__;
+__stack_end__               = __stack_start_sys__ - __STACK_SIZE_SYS__;
+
+SECTIONS {
+    /* We start at 0 */
+    . = 0;
+
+    /* Startup section */
+    startup :
+    {
+        KEEP(*(.startup))   /* When REMOVEUNUSED is enabled (see the Makefile), this
+                               ensures the startup section (and thus everything else) isn't removed */
+#ifdef __RUN_FROM_RAM
+    } > ram
+#elif defined __RUN_FROM_ROM
+    } > rom
+#endif
+
+#if CODEPROTECTION && defined __RUN_FROM_ROM
+    codeprotection 0x1fc :
+    {
+        KEEP(*(.codeprotection))
+    } > rom
+#endif
+
+    . = ALIGN(4);   /* Make sure the code is alligned right. The argument tells
+                       the linker to align to the next Nth byte (4th in this case) boundary) */
+
+    /* Next, the actual code */
+    .text :
+    {
+        *(EXCLUDE_FILE (*text.iwram*) .text)
+        *(.text.*)
+        *(.stub)
+        /* .gnu.warning sections are handled specially by elf32.em.  */
+        *(.gnu.warning)
+        *(.gnu.linkonce.t*)
+        *(.glue_7 .glue_7t)
+
+        . = ALIGN(4);
+#ifdef __RUN_FROM_RAM
+    } > ram
+#elif defined __RUN_FROM_ROM
+    } > rom
+#endif
+
+    . = ALIGN(4);
+
+    /* read-only data */
+    .rodata :
+    {
+        *(.rodata)
+        *all.rodata*(*)
+        *(.roda)
+        *(.rodata.*)
+        *(.gnu.linkonce.r*)
+
+        . = ALIGN(4);
+#ifdef __RUN_FROM_RAM
+    } > ram
+#elif defined __RUN_FROM_ROM
+    } > rom
+#endif
+
+    /* Read-only data ends here */
+    . = ALIGN(4);
+    __ro_end = . ;
+    __ro_end__ = . ;
+
+/*
+  Following sections are all located in RAM (during runtime, that is).
+
+  The stack is always at the top, since it's a top-down stack.
+  The other two sections (data and bss) are located at the beginning of the RAM
+  address range, so that the heap and the stack grow towards eachother.
+  However, when RAM_AT_TOP is set, data and bss are also located at the top of the RAM
+  address range.
+*/
+
+    /* Initialisation data. Belongs in RAM, is stored in ROM.
+       This is copied over in crt0.S */
+#if DATA_LOCATION != 0
+#warning ".data relocated"
+    .data DATA_LOCATION :
+#else
+    .data :
+#endif
+    {
+        /* Following two are used in crt0.S to find the data block */
+        __data_beg__ = .;
+
+        *(.data)
+        *(.data.*)
+        *(.gnu.linkonce.d*)
+        CONSTRUCTORS
+
+        . = ALIGN(4);
+
+#ifdef __RUN_FROM_ROM
+        /* Functions to be executed from RAM are located here */
+        *(.ramfunc)
+#endif
+
+#ifdef __RUN_FROM_RAM
+    } > ram
+#elif defined __RUN_FROM_ROM
+    } > ram AT > rom
+#endif
+
+    /* DATA ends here */
+    . = ALIGN(4);
+    __data_end__ = . ;
+    /* And so crt0.S knows where to copy the data on startup: */
+    __data_beg_src__ = LOADADDR(.data);
+
+#if POWERLOSSDETECTION
+    .powerlossdetection (NOLOAD):
+    {
+        powerloss = .;
+        . += 4;
+    } > ram
+#endif
+
+    /* Unused memory, will be used for unitialised data (crt0.S clears all of this
+       on startup) */
+#if BSS_LOCATION != 0
+#warning ".bss relocated"
+    .bss BSS_LOCATION (NOLOAD) :
+#else
+    .bss (NOLOAD) :
+#endif
+    {
+        /* Following is used in crt0.S to find the beginning of the BSS */
+        __bss_beg__ = .;
+        _bss_start = .;
+
+        *(.bss*)
+
+        /* Align here to ensure that the .bss section occupies space up to
+           _end.  Align after .bss to ensure correct alignment even if the
+           .bss section disappears because there are no input sections. */
+        . = ALIGN(4);
+    } > ram
+
+    /* BSS ends here */
+    . = ALIGN(4);
+    _bss_end__ = . ;
+    __bss_end__ = . ;
+
+    /* the 'end' symbol is used by the 'sbrk' syscall (libc stuff), which in
+       turn is needed to get malloc and friends working right.
+       Actually; sbrk() is used to allocate RAM starting at end (here, thus),
+       up to 'sp' (indeed, the stackpointer). */
+    _end = . ;
+    __end__ = . ;
+    PROVIDE (end = .);
+
+    /* The stack. We won't place anything there right now; it's here only to
+       assure that it will fit in the available RAM */
+    stack __stack_end__ :
+    {
+        . += __STACK_SIZE_FIQ__ +
+             __STACK_SIZE_IRQ__ +
+             __STACK_SIZE_SUPERVISOR__ +
+             __STACK_SIZE_ABORT__ +
+             __STACK_SIZE_UNDEFINED__ +
+             __STACK_SIZE_SYS__;
+    } > ram
+
+    /* Stabs debugging sections.  */
+    .stab          0 : { *(.stab) }
+    .stabstr       0 : { *(.stabstr) }
+    .stab.excl     0 : { *(.stab.excl) }
+    .stab.exclstr  0 : { *(.stab.exclstr) }
+    .stab.index    0 : { *(.stab.index) }
+    .stab.indexstr 0 : { *(.stab.indexstr) }
+    .comment       0 : { *(.comment) }
+
+    /* DWARF debug sections.
+       Symbols in the DWARF debugging sections are relative to the beginning
+       of the section so we begin them at 0.  */
+    /* DWARF 1 */
+    .debug          0 : { *(.debug) }
+    .line           0 : { *(.line) }
+    /* GNU DWARF 1 extensions */
+    .debug_srcinfo  0 : { *(.debug_srcinfo) }
+    .debug_sfnames  0 : { *(.debug_sfnames) }
+    /* DWARF 1.1 and DWARF 2 */
+    .debug_aranges  0 : { *(.debug_aranges) }
+    .debug_pubnames 0 : { *(.debug_pubnames) }
+    /* DWARF 2 */
+    .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+    .debug_abbrev   0 : { *(.debug_abbrev) }
+    .debug_line     0 : { *(.debug_line) }
+    .debug_frame    0 : { *(.debug_frame) }
+    .debug_str      0 : { *(.debug_str) }
+    .debug_loc      0 : { *(.debug_loc) }
+    .debug_macinfo  0 : { *(.debug_macinfo) }
+    /* SGI/MIPS DWARF 2 extensions */
+    .debug_weaknames 0 : { *(.debug_weaknames) }
+    .debug_funcnames 0 : { *(.debug_funcnames) }
+    .debug_typenames 0 : { *(.debug_typenames) }
+    .debug_varnames  0 : { *(.debug_varnames) }
+}

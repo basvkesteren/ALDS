@@ -1,0 +1,133 @@
+This is ALDS (formerly known as the driverpackage), version 2.3.2
+
+!!!!!!!!
+NOTE: this is not the actual documentation: see doc/doxygen/html/index.html for the real deal.
+!!!!!!!!
+
+contents
+1. What's new
+2. What is it?
+3. Why?
+4. I want feature X in here!
+5. Requirements
+6. Know bugs
+7. Version history
+8. Author(s)
+
+    What's new
+-Enhance RTC driver; counter and alarm interrupt support, alarm setup support. Note that the rtc_init() function is no longer API compatible with the ALDS 2.3.1 version.
+-Add cpu_wakeupsources() to power.h, to set power-down wakeup perhiperals
+-Add brownout detection support
+-Complete ADC burstmode (now it actually works!). Note that due to a bug in the previous version, this function is not API compatible with the ALDS 2.3.1 version.
+ Since these versions didn't work anyways, that shouldn't be a problem, i think...
+-Add auto baudrate support to uart0 and uart1 drivers
+-Improve doxygen documentation generation: -Document all code, thus not skipping the code disabled because of the selected processor.
+                                           -Add function call and caller trees
+-Fix some bugs in the eint driver; edge and level setting where ignored, eint0 on the lpc2101/2/3 used the wrong pin
+-Add 'make sparse' to the makefile, to scan the code with sparse. Fixed some stuff it reported: non-ansi function definitions due to a missing 'void', and
+ most importantly, this catched some wrong register defines.
+-Add support for the lpc2131/32/34/36/38 MCU's. Basicly a lpc214* without USB, but i wanted to have an MCU to actually run this on before calling it 'supported'
+-Move stringfunctions from std to std_string, due to some possible mixups with the standard <string.h>
+-Remane print() to fprint(), add an output argument (function pointer). print() is still available as a macro.
+-Add config_crt0.S; some configurable bootcode stuff, usefull for RTOS integration.
+
+    What is it?
+This started out as a set of functions used for an LPC2106 based development-board during college.
+See http://www.electronicengineering.nl/bent/arm/arm.html for a description of this board and the
+compiler/debugger used.
+As classes continued, the function-set became more and more complete. The last project I did during
+college was the development of an IP-interface for the development-board; one of the results was a
+driver-package, based on the function-set, similair to what you have here. The last version released
+during this project was version 1.5.
+Right now, during my free time, i so happen to enjoy hacking on the lpc2106 development-board from
+time to time. This driver-set often provides a base for my projects, and as such i keep developping it.
+
+    Why?
+Just for fun. Maybe oneday I'll even build something usefull with it (e.g. finish a project..)
+
+    I want feature X in here!
+Then go do it! Maybe, just maybe, if you can convince me it's usefull, i like it, and i have the time
+i will consider doing it. But i do this in my spare time and so happen to do more than just sitting behind
+my computer all day, so don't expect it to happen soon..
+
+    Requirements
+1.An LPC21xx board. If you want to use the special hardware-drivers (as the LCD and the keyboard), a board as
+  can be found on http://www.electronicengineering.nl/bent/arm/arm.html would be best. Note that most code does
+  not depend on this board, there's a lot of general ARM7 or even just general code in there.
+2.An ARM7 GCC development toolchain, consisting of GCC, binutils, newlib, GDB/Insight, OpenOCD, make and some
+  general UNIX tools. A good Windows toolchain can be found at http://www.yagarto.de/.
+  For a Linux toolchain, see http://bas.woodpecker.gotdns.org/ALDS.php (what I use) or www.gnuarm.org (the 'default').
+
+    Know bugs
+"Bugs? What bugs?"
+There are probably plenty of them. Known bugs are:
+-The SSP driver is very basic; needs to be extended
+-VIC priorities are hardcoded; don't like that
+-Missing features (enough!)
+
+    Version history
+2.3.2
+-See 'What's new'
+2.3.1
+-Improved doxygen documentation
+-Bugfixes in the ADC drivers
+-The 'YEAR' register of the RTC was defined as unsigned char, but since this is a 12 bit register this has to be unsigned short.
+-Fixed the Makefile dependency generation
+-External interrupt driver refactoring (Note that this driver is not API compatible with the ALDS 2.3.0 version)
+-Several drivers got improved PINSEL initialisation (before bits where only set, not cleared, thus possibly wrong initialisation could occure).
+-Buildscript improvements (JTAG flashloading automaticly sets no. of flashsectors to erase, some GDB scripts are now preprocessed to make some stuff clearer, some scripts where renamed)
+-Due to the JTAG flashloading improvements the flashtype determination moved from iap.h to mcu_select.h, and IAP_FLASHTYPE was renamed to __MCU_FLASHTYPE and IAP_FLASHSECTORS to __MCU_FLASHSECTORS.
+-Moved stacksize configuration to config.h
+-Added assert.h
+-Fixed swi handling in thumb mode
+2.3
+-Renamed to ALDS
+-Support the LPC2141/42/44/46/48
+-Lot of code reorganization and cleanup. Some functions have moved to other files, some have
+ changed names. Should be easier to use from a user point of view, and should be easier to
+ add support for other (LPC2000) MCU's
+-Much improved exception handling; full context is preserved for further analysis,
+ backtrace is done on the actual stack as it where during the exception (instead of
+ on the stack as it is during the analysis, as was done before..) and all exceptioncode
+ can be disabled completely if wanted, thus saving a lot of ROM space
+-Cleanup of crt0.S and Linkerscript; changed stack setup (much clearer now). Also stack
+ is included in the linker phase, so that you'll always be sure the configured stack actually fits
+-Initial nested interrupt support
+-Several new perhiperal drivers
+2.2
+-Support the LPC2101/2/3/4/5 and 6.
+-Merge Linkerscript_RAM and Linkerscript_ROM. Settings are changed using the preprocessor.
+-Merge the openocd configuration files. Settings are changed using the preprocessor.
+-Split board dependent code from CPU perhiperal code. The first is now in the directory 'board', the latter
+ in the directory 'drivers'.
+-Fix the CRASHACTION setting.
+-Fix a warning in the PWM driver.
+-Add interrupt based reception to the UART drivers.
+-Add flowcontrol functions to the UART1 driver
+-Several small bugfixes
+2.1
+-A conversion from 'OCDLibRemote' to 'OpenOCD', which gives much improved JTAG debugging
+ (now on Linux, too). And, flashloading through JTAG, from the makefile (try 'make load')
+ O, one more thing.. Flash debugging! try 'make debugflash'.
+-Improved UART driver. UART0 and UART1 are now completely seperated, and all relevant settings
+ (wordlength, stopbits, parity, ..) are now easely configurable.
+-I2C bugfixes. Yes, it finally works! (this has to be the single most irritating perhiperal of the
+ LPC2106. I2C in general is over-engineered, this perhiperal is even worse..)
+-Fix a bug where clearing the display (lcd_clear()) could mess up communication with it, requiring
+ a lcd_init() to get it going again..
+-Fix some wrong DEBUG defines.
+2.0
+-Initial release
+
+    Author(s)
+-Bastiaan van Kesteren  <bastiaanvankesteren@gmail.com>
+This is (based on code) developed during a college-project.
+While i wrote the code, several idea's and improvements from the 1.x versions are also
+from my project members at that time:
+-Ahmed Bananny
+-Koen Bijleveld
+-Ingmar Voogt
+
+Comments, bugreports and/or patches have been send by the following people (thanks!):
+-Gaspar Pollano (ADC patch, bugreports)
+-Tarmigan (ADC patch, registers patch, intial PWM support for LPC2103 and LPC2148 series, several bugreports and ideas)

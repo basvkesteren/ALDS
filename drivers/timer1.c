@@ -1,0 +1,52 @@
+/*
+    ALDS (ARM LPC Driver Set)
+
+    timer1.c:
+             Timer1 driver
+
+    copyright:
+              Copyright (c) 2006-2007 Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>
+
+              This program comes with ABSOLUTELY NO WARRANTY; for details see the file LICENSE.
+              This program is free software; you can redistribute it and/or modify it under the terms
+              of the GNU General Public License as published by the Free Software Foundation; either
+              version 2 of the License, or (at your option) any later version.
+
+    remarks:
+            -Timer 1 is a 32 bit timer.
+            -The timer interrupt-handler must clear the interruptflags using the following code:
+              T1IR = 0xFF;
+             Or, use one of the timerx_clearint() macro's (see timer.h)
+
+*/
+/*!
+\file
+Timer1 driver
+*/
+#include <timer.h>
+#include <types.h>
+#include <vic.h>
+#include "registers.h"
+#include "timer_bits.h"
+
+void timer1_init(const unsigned int interval, const unsigned int prescaler, const FUNCTION handler)
+/*!
+  Initialise timer1.
+  Calling this function with 'handler' as NULL will enable the timer with the interrupt disabled.
+*/
+{
+    /* configure timer1 */
+    T1TCR = 0;                                      /* stop timer */
+    T1PR  = prescaler;                              /* set prescaler */
+    T1MR0 = interval;                               /* set counter */
+    T1MCR = BIT_MCR_MR0_I | BIT_MCR_MR0_R;          /* Interrupt on MR0, and reset */
+    T1IR = 0xFF;                                    /* clear interrupt-flags */
+
+    if(handler != NULL) {
+        /* configure VIC */
+        vic_setup(VIC_CH_TIMER1, IRQ, PRIO_TIMER1, handler);
+    }
+
+    /* start timer */
+    T1TCR = BIT_TCR_ENABLE;
+}

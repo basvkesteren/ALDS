@@ -1,0 +1,93 @@
+
+    Interrupts
+
+The single most complex task done by this driverpackage is the interrupt handling. To make
+interrupthandling easy for the user, several functions are defined. This document shows which
+functions are available and how they should be used.
+
+    How it works
+
+Please note: this is not a 'interrupts/VIC/IRQ/FIQ/... for dummies' or anything. If you really want
+to know how all this works, get some docs from the net.
+There are two interruptclasses, namely IRQ and FIQ interrupts. The lpc21xx has 16 interruptsources,
+which all can be assigned to either the IRQ or the FIQ-exception, using the vectored interrupt
+controller (or VIC). This VIC has a total of 16 channels, where the first channel has the highest
+priority, the last the lowest. If an interrupt occurs, the VIC will load the address of the handler
+to one specific register (VICVectAddr) which then can be read.
+Note that it is possible to skip the VIC all together; This is common practise when using the FIQ, since
+this is meant to be as fast as possible.
+So, how is this done in the driverpackage?
+When an IRQ occurs, the CPU will jump to address 0x18, which contains the exception-table. This is located
+in the file crt0.S, and location 0x18 in memory so happens to contains a branch to the function 'IRQHandler'
+This function will store the current context on the stack, then read the function assigned to the current
+active interrupt from the VIC and execute this. When this function returns, the context is restored from
+the stack, the VIC is updated and 'IRQHandler' exits.
+When a FIQ occurs, the CPU now jumps to address 0x1C, which contains a jump to the function 'FIQHandler'.
+This function does not do anything, since FIQ's are generally very specific to what the user wants. If
+you want a FIQ, the fastest way is to program the handler for it in address 0x1C, thus replacing the jump
+to 'FIQHandler'.
+
+    Functions - enable/disable
+
+There are several low-level interrupt-routines defined in the file crt0.S. These are:
+
+- void __enable_interrupts(unsigned int IRQorFIQ)
+This function will enable the IRQ or the FIQ (or both, if or-ed together)
+
+- void __disable_interrupts(unsigned int IRQorFIQ)
+This function will disable the IRQ or the FIQ (or both, if or-ed together)
+
+- void __store_interrupts(unsigned int *status)
+This function first stores the state of both IRQ and FIQ to *status, and after that
+disables both IRQ and FIQ.
+
+- void __restore_interrupts(unsigned int *status)
+This function restores the status of IRQ and FIQ as stored in *status
+
+    Functions - VIC interfacing
+
+- void vic_init(void)
+This function disables all VIC sources, and loads a handlerfunction for all vectors.
+
+- void vic_setup(const unsigned char channel, const unsigned char IRQorFIQ, const unsigned char priority, const FUNCTION handler)
+This function is used to setup a channel.
+
+- void vic_disablechannel(const unsigned int channel)
+This function is used to disable one single channel
+
+- void vic_enablechannel(const unsigned int channel)
+This function is used to enable one single channel
+
+- unsigned char vic_gethighestfreepriority(void)
+This function returns the highest free priority
+
+- unsigned char vic_getpriority(const unsigned char channel)
+This function returns the priority of the given channel
+
+The often used 'channel' argument is used to tell the function which VIC-channel should be used. The lpc21xx has 16 sources, all hardwired
+to one specific VIC-channel. The file lpc21xx.h contains defines for all these channels, in the form VIC_CH_XXX. Lower channels have higher
+priority, and thus will be handled first if multiple interrupts occure at once.
+In the driverpackage code, the priorities are hard-coded. The file vic.h in the drivers directory contains the default values, as '#define's
+
+    Functions - debugging
+
+-void irq_status(void)
+This function will display the complete VIC channel, including installed vector functions. It will also display the state of the IRQ and FIQ.
+
+    Special cases
+
+There are some do's and don'ts involved in all this:
+
+1. Do not call __store_interrupts() twice with the same argument. The same applies to __restore_interrupts().
+   Always use these two in unnested pares.
+   When you do nest them, the first call to __store_interrupts will store the current IRQ and FIQ status and disable them. The second call
+   will again store the IRQ and FIQ status to the same location, thus overwriting the real status.
+
+2. Where needed, all the interruptfunctions discussed above already enable and disable interrupts using the __store and __restore functions.
+   This means that one should not call __store_interrupts() and then vic_setup() since this will call __store_interrupts() twice!
+
+3. If you use the __store_interrupts() and __restore_interrupts() functions in your own functions, it might be a good idea to use a local
+   (for that function) interrupt status variable instead of the global __interrupt_status variable. The latter is used by all the driverpackege
+   functions, so using that in your own functions might cause accidental nesting of the __store and __restore functions.
+
+    2006, Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>

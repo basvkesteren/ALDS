@@ -1,0 +1,18 @@
+
+    Getting started
+
+Program-execution will start in the file crt0.S, which contains the startup-code. From there the main() function is called,
+which is located in the file main.c. This function will initialise most of the hardware, after which the function usercode()
+is called in user.c. This is where the actual functionality (the 'usercode') should be placed. Read this file for some more
+information and some example-code.
+    The folder 'drivers' contains code for most of the onboard perhiperals of the LPC21xx MCU's. For each perhiperal class there
+is one header file(located in the 'include' folder), whilst each perhiperal has it's own C file (for example, there is one uart.h
+file, but also uart0.c and uart1.c. uart.h contains the definitions for both uart0 and uart1).
+Some driver files contain configuration parameters. They always include some comments about what they do, so do read
+those if you want to change them.
+    The folder 'drivers/board' contains some board specific code; read the files for details. Including <board.h> includes all the code available
+for the board in use (which is configured in config.h, setting BOARD)
+    The folder 'scripts' contains scripts and configuration files needed for the JTAG debugging. You generally do not need
+to change these files.
+
+    2006, Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>

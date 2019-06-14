@@ -1,0 +1,68 @@
+#!/bin/sh
+##
+#    ALDS (ARM LPC Driver Set)
+#
+#    getsectors.sh:
+#                  start OpenOCD and GDB/Insight from the Makefile
+#
+#    copyright:
+#              Copyright (c) 2008 Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>
+#
+#              This program comes with ABSOLUTELY NO WARRANTY; for details see the file LICENSE.
+#              This program is free software; you can redistribute it and/or modify it under the terms
+#              of the GNU General Public License as published by the Free Software Foundation; either
+#              version 2 of the License, or (at your option) any later version.
+#
+#    remarks:
+#            -This script should be executed from the Makefile, not by hand!!
+#             Note that this script is even to be preprocessed by GCC (ever seen that before?? :-) )
+#            -Wonder why I've used 'let' in some places instead of the (commented) expr equivalent?
+#             Seems expr fails on windows when using '/'. The fun of getting Unix stuff to work on Windows....
+
+# Following five lines are preprocessed by gcc, from the Makefile
+#include <config.h>
+#if __MCU_FLASHTYPE == 0
+#error "Don't know the flashtype of this MCU, cannot continue"
+#endif
+FLASHTYPE=__MCU_FLASHTYPE
+
+ELF=$1
+SIZE_BIN=$2
+
+# Get size in bytes
+SIZE=`$SIZE_BIN $ELF | grep "$ELF" | awk '{ print $4 }'`
+
+# Calculate no. of required sectors
+if [ $FLASHTYPE -eq 1 ]; then
+    #SECTORS=`expr $SIZE / 8192`
+    let "SECTORS = $SIZE / 8192"
+    if [ `expr $SIZE % 8192` -gt 0 ]; then
+        SECTORS=`expr $SECTORS + 1`
+    fi;
+else
+    if [ $SIZE -lt 32768 ]; then
+        #SECTORS=`expr $SIZE / 4096`
+        let "SECTORS = $SIZE / 4096"
+        if [ `expr $SIZE % 4096` -gt 0 ]; then
+            SECTORS=`expr $SECTORS + 1`
+        fi;
+    elif [ $SIZE -lt 491520 ]; then
+        SIZE=`expr $SIZE - 32768`
+        #SECTORS=`expr $SIZE / 32768`
+        let "SECTORS = $SIZE / 32768"
+        SECTORS=`expr $SECTORS + 8`
+        if [ `expr $SIZE % 32768` -gt 0 ]; then
+            SECTORS=`expr $SECTORS + 1`
+        fi;
+    else
+        SIZE=`expr $SIZE - 491520`
+        #SECTORS=`expr $SIZE / 4096`
+        let "SECTORS = $SIZE / 4096"
+        SECTORS=`expr $SECTORS + 22`
+        if [ `expr $SIZE % 4096` -gt 0 ]; then
+            SECTORS=`expr $SECTORS + 1`
+        fi;
+    fi;
+fi;
+
+echo $SECTORS

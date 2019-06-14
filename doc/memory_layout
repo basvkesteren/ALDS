@@ -1,0 +1,159 @@
+
+    LPC2101/2/3/ & LPC2104/5/6 memory layout
+
+NOTE: The following file contains some info specific to the LPC210x MCU's, but most
+of it applies to all other ARM7 MCU's, too (well, atleast the LPC2000 series..)
+
+What follows is a collection of notes about, and an attempt to clearify the
+memory layout.
+
+ ---------------------------------------
+|                                       |       0xFFFFFFFF
+|          AHB perhiperals              |
+|                                       |       0xF0000000
+ ---------------------------------------
+|                                       |       0xEFFFFFFF
+|          APB perhiperals              |
+|                                       |       0xE0000000
+ ---------------------------------------
+|                                       |       0xDFFFFFFF
+|            reserved                   |
+|                                       |       0x80000000
+ ---------------------------------------
+|                                       |       0x7FFFFFFF
+|            Boot block                 |
+|                                       |       0x7FFFE000
+ ---------------------------------------
+|                                       |       0x7FFFDFFF
+|             reserved                  |
+|                                       |       0x40010000
+ ---------------64KB (LPC2106)----------
+|                                       |       0x4000FFFF
+|               SRAM                    |
+|                                       |       0x40008000
+ ---------------32KB (LPC2105)----------
+|                                       |       0x40007FFF
+|               SRAM                    |
+|                                       |       0x40004000
+ ---------------16KB (LPC2104)----------
+|                                       |       0x40003FFF
+|               SRAM                    |
+|                                       |       0x40002000
+ ----------------8KB (LPC2103)----------
+|                                       |       0x40001FFF
+|               SRAM                    |
+|                                       |       0x40001000
+ ----------------4KB (LPC2102)----------
+|                                       |       0x40000FFF
+|               SRAM                    |
+|                                       |       0x40000800
+ ----------------2KB (LPC2101)----------
+|                                       |       0x400007FF
+|               SRAM                    |
+|                                       |       0x40000000
+ ---------------------------------------
+|                                       |       0x3FFFFFFF
+|              reserved                 |
+|                                       |       0x00010000
+ ---------------64KB (LPC2104/5/6)------
+|                                       |       0x0000FFFF
+|               flash                   |
+|                                       |       0x00008000
+ ---------------32KB (LPC2103)----------
+|                                       |       0x00007FFF
+|               flash                   |
+|                                       |       0x00004000
+ ---------------16KB (LPC2102)----------
+|                                       |       0x00003FFF
+|               flash                   |
+|                                       |       0x00002000
+ ----------------8KB (LPC2101)----------
+|                                       |       0x00001FFF
+|               flash                   |
+|                                       |       0x0000001D
+ ----------------------------------------
+|                                       |       0x0000001C
+|       interrupt vector table          |
+|                                       |       0x00000000
+ ---------------------------------------
+
+The code is spread out in several sections, each defined in the
+linkerscript. The following sections exist:
+ .startup       startup code, see crt0.S, ".section .startup"
+ .text          the program code
+ .rodata        read only data
+ .data          initialisation values for variables
+ .bss           unused ram, cleared during startup (see crt0.S)
+Locations depend on wheter the code runs from ram or rom(flash):
+
+section         ram             rom
+-------------------------------------
+ .startup       ram 1)          rom
+ .text          ram             rom
+ .rodata        ram             rom
+ .data          ram             rom 2)
+ .bss           ram             ram
+
+1) To make this work, the interrupvector is remapped during startup using
+   MEMMAP, see crt0.S
+2) This is copied from rom to ram during startup, see crt0.S
+
+    Stack layout
+
+The stack is located at the top of the RAM, so location depends
+on the RAM size, as follows: __stack_start__ == 0x40000000 + ram size.
+
+ ---------------------------------------        __stack_start__ ( = __stack_start_fiq__)
+|                                       |
+|               FIQ                     |
+|                                       |
+ ---------------------------------------        __stack_start_irq__
+|                                       |
+|               IRQ                     |
+|                                       |
+ ---------------------------------------        __stack_start_supervisor
+|                                       |
+|            Supervisor                 |
+|                                       |
+ ---------------------------------------        __stack_start_abort
+|                                       |
+|              Abort                    |
+|                                       |
+ ---------------------------------------        __stack_start_undefined__
+|                                       |
+|            Undefined                  |
+|                                       |
+ ---------------------------------------        __stack_start_sys__
+|                                       |
+|           System/User                 |
+|                                       |
+ ---------------------------------------        __stack_end__
+
+Stack sizes are configurable in the linkerscript, default sizes are:
+ FIQ:           256 bytes
+ IRQ:           256 bytes
+ Supervisor:    4 bytes
+ Abort:         4 bytes
+ Undefined:     4 bytes
+ System/User:   256 bytes
+This is a farly large setup which should be enough for most applications.
+Note that the stacksize should be a value which can be divided by four
+(one word uses 4 bytes). A stackjof 0 should not be used unless your absolutely
+sure you never use that runmode.
+
+    Stack overflows
+
+There's no such thing as a stack overflow warning; if your program uses
+more stack than available, it will crash (if your lucky, that is..).
+When compiling code, the output will show the size of the resulting binary,
+for example:
+
+    Compilation for an LPC2103 MCU finished. Resulting size:
+       text    data     bss     dec     hex filename
+     0x1eec     0x0    0x3c    7976    1f28 ARM_IP.elf
+
+Here the value below 'dec' is the actual complete size, including the
+configured stacksize. Note that this means the *reserved* stackspace; a
+program can use more stack than that if it needs it.
+
+    2007, Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>

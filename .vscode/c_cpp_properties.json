@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "ARM-GCC",
+            "compilerPath": "C:/Program Files/ARM Embedded GCC/8.2.1-1.2-20190119-1237/bin/arm-none-eabi-gcc.exe",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Program Files/ARM Embedded GCC/8.2.1-1.2-20190119-1237/include"
+            ],
+            "defines": [
+                "__MCU=LPC2103",
+                "__FOSC=12000",
+                "SVN_REV=\"VISUALCODE\""
+            ]
+        }
+    ],
+    "version": 4
+}

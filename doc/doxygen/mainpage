@@ -1,0 +1,639 @@
+/*!
+\mainpage The ARM LPC Driver Set (ALDS)
+\author Bastiaan van Kesteren, http://bas.woodpecker.gotdns.org
+
+The ARM LPC Driver Set (from now on reverred to as ALDS) is meant
+as a basis for softwareprojects around the LPC2000 MCU from NXP,
+specificly the LPC21xx series.
+ALDS provides basic startup software, drivercode for most perhiperals
+and a combination of usefull debugging tools.
+
+The latest version of ALDS (including this documentation) can be found at my
+personal website: http://bas.woodpecker.gotdns.org/ALDS.php
+
+\note
+This document describes the ALDS code and workings. I assume you know your
+way around the LPC2000 (Otherwise make sure you have the manual of the
+LPC2000 you use at hand...)
+
+\section cont Table of contents
+
+ - \ref SupHW<br>
+ - \ref DE<br>
+ - \ref config<br>
+ - \ref makeusage
+ - \ref examples<br>
+ - \ref int<br>
+ - \ref exhand<br>
+ - \ref errcod<br>
+ - \ref mem<br>
+ - \ref board<br>
+ - \ref addmcu<br>
+
+\section SupHW Supported hardware
+
+This is a hobby-project of mine with not that much users (you can help here
+by using it.. (-; ) so not that much chips are supported yet.
+Eitherway, the following chips should work out the box:
+
+ - LPC2101/2/3
+ - LPC2104/5/6
+ - LPC2141/2/4/6/8
+
+\sa \ref addmcu "Adding support for a new MCU"
+
+Furthermore a wiggler compatible JTAG interface is needed for any JTAG
+access to the board.
+Note that the ALDS code does not depend on this, only the build environment
+configuration. If you want to use another JTAG interface, see the file
+scripts/openocd_config. As long as OpenOCD supports your interface, it should
+be relatively straightforward to make ALDS work with it.
+
+\section DE The required development environment
+
+First you need a development environment (e.g a compiler, debugger and the
+like). You'll need the following components:
+
+ - GCC, Binutils, Newlib (compiler, linker, e.d)
+ - GDB/Insight (debugger)
+ - OpenOCD (JTAG debugging)
+
+The debugger scripts require a bash shell and some basic UNIX tools.
+Furthermore you can use the editor/IDE of your choise.
+
+To generate the documentation (which you're probably reading right now), doxygen 1.5 is required.
+
+For a complete environment for Linux, see http://bas.woodpecker.gotdns.org/ALDS.php#Toolchain. For Windows Yagarto
+(see http://www.yagarto.de) is a good option. Note that some small additions are required for Yagarto before it
+can use ALDS completely; see http://bas.woodpecker.gotdns.org/ALDS.php#Toolchain for details.
+
+\section config Configuration
+
+ALDS has a lot of configuration parameters, spread over some files:<br>
+First there is the Makefile, containing the CPU and clock selection, and several
+build parameters such as optimization and debugger support (don't confuse this with
+the debug console!).
+\note the file Makefile_project.inc is meant for the project specific makefile-settings.
+
+Next there is the global configuration file, config.h. This file contains a lot of
+important settings, so at least take a look at it before you start loading anything!
+Furthermore there is the debug output configuration, config-debug.h. This file
+specifies the debug output device to use.
+
+Finally, some drivercode (the files in the drivers directory) contain settings specific to that device.
+These don't have to be changed for normal usage. Usually these settings can be used to reduce codesize at
+the cost of reduced functionality or stability. See the driver code for all the details.
+
+\section makeusage How to use the Makefile
+
+Compilation is done using make (http://www.gnu.org/software/make/), and a makefile. The makefile contains several settings used to configure the build-process.
+\sa \ref config
+
+To use this makefile, run 'make' from a commandline in the ALDS directory; this will build ALDS with the selected build-options.
+But one can do more with the Makefile than just building the code:<br>
+- make clean<br>
+This will remove all files created during the build-process.
+- make debug<br>
+This will start openOCD and the GDB/Insight debugger.
+The behavior of command depends on the MEM setting in the Makefile, which can be set to eiter RUN_FROM_ROM or RUN_FROM_RAM.
+When the code is compiled for RAM usage (thus MEM = RUN_FROM_RAM), the code is loaded in RAM, and next the debugger starts.
+If the code is compiled for ROM (thus MEM = RUN_FROM_ROM) usage, NOTHING IS LOADED TO THE TARGET, the debugger will try to attach to the already running code.
+This indeed means that the CPU must already be running the compiled code in flash when this is started (see 'make load'). As said, the
+debugger will try to 'attach' to the already running CPU, so it must indeed be running! (Note that the debugger will reset the program during attaching)
+- make load<br>
+This will load the hex-file to flash, if the code was compiled for ROM usage.
+\note flashloading through the JTAG connector (which is what this command does) is not as reliable as ISP (serial cable) programming. If you can, do use ISP!
+- make doc<br>
+Generate documentation, requires a doxygen-1.5 installation.
+- make openocd<br>
+Start openOCD and keep it running in the background. Usefull if you want to do telnet debugging, or use some other sort of debugger/IDE
+(Eclipse, for example..).
+
+\section examples Code examples
+
+\note
+See the main.c file of the default ALDS package; it contains some example code, too.
+
+\subsection simstart Simple startup
+
+Following piece of code shows how to start the system:
+
+\code
+#include <ALDS.h>
+
+int main()
+{
+    while(init() != GOOD);
+
+    return TERM;
+}
+\endcode
+
+Obviously this is not a very usefull application, but it does show how to
+initialise ALDS (and boy, is that difficult..).
+Some notes, however:
+ - main() is always the starting point of the C-code. This is called from
+the low level initialisationcode in the file crt0.S
+ - When main() returns, code execution continuous in the low level
+initialisationcode. Depending on the configuration the returnvalue will be
+shown on the debug console. \sa \ref exhand "Exception handling"
+ - The file ALDS.h is only meant for inclusion in main.c. So if you have more
+files in your project, don't include ALDS.h: only include the files you need
+(delay.h, irq.h just to name a few).
+
+\subsection debug Debug console
+
+ALDS provides a debug console in the form of dprint() (also see the file
+include/debug.h). dprint() is a macro which, points to the print() function,
+which is a lightweight printf() like function. See drivers/print.c for all the details.
+
+\code
+#include <ALDS.h>
+
+int main()
+{
+    while(init() != GOOD);
+
+    dprint("Yay, I'm debugging");
+
+    return TERM;
+}
+\endcode
+
+The debug console is initialised with the init() call (that is, if ALDS is
+configured to do so, which it is by default), so no additional code
+is required. The dprint() configuration is found in the file
+config-debug.h, where the outputdevice can be selected. By default uart0 is
+used.
+Furthermore the baudrate used is configured in the file config.h with the
+define BAUDRATE. Obviously, when the debug output settings are changed in
+debug.h, the meaning of the baudrate setting can change (or become
+meaningless..)
+
+Besides that a global define DEBUG is provided (set in config.h) which can
+be used to set the debug level. See the following example:
+
+\code
+#include <ALDS.h>
+
+int main()
+{
+    while(init() != GOOD);
+
+    #if DEBUG >= D_ERROR
+    dprint("An error message");
+    #endif
+
+    #if DEBUG >= D_INFO
+    dprint("An information message");
+    #endif
+
+    return TERM;
+}
+\endcode
+
+This provides a way of adding additional debugstatements in your code, and
+being able to disable some of them with one single define if wanted.
+
+ALDS also provides a variant of the well known assert() function, in the form of ASSERT() (See assert.h).
+Consider the following code:
+
+\code
+#include <assert.h>
+
+int test(int i, int j)
+{
+    ASSERT(i>10);
+    ASSERT(j<i);
+
+    return i+j;
+}
+\endcode
+
+What the ASSERT() macro does, is printing a message with dprint() when the given expression is false.
+This is used to check certain things during program execution, and emit a warning when these things are not as expected.
+The 'standard' assert would stop program execution, but wether or not this is wanted in an embedded application is a point of discussion..
+The ASSERT() macro is found in the file assert.h; you can add your own assert additions here, or set ASSERT_CALLBACK in config.h and add your assert additions to callback_assert() in callback.c.
+
+\subsection perhipex Perhiperals
+
+ALDS provides a lot of perhiperal drivers. It would go a bit too far to
+provide examples for every perhiperal available. However, as a general rule
+of thumb, each perhiperaldriver has an *_init() function to initialise it,
+and one or more *_put() and *_get() functions to read from and/or write to
+the perhiperal. Next is a general example, showing how to use the SPI
+interface:
+
+\code
+#include <ALDS.h>
+#include <spi.h>
+
+int main()
+{
+    while(init() != GOOD);
+
+    spi_init(0,SPI_MAXSPEED,NULL);
+
+    spi_put(0x01);
+
+    dprint("Read from SPI: %h",spi_putnget(0x00));
+
+    return TERM;
+}
+\endcode
+
+As you can see, there is a spi_init() function to initialise the SPI
+interface (for the details on this function see it's documentation), a
+spi_put() and a spi_putnget(). There is no real spi_get(), since that is a
+bit useless due to the nature of the SPI interface.
+
+Either way, this shows that each perhiperal loosely follows these guidelines.
+But since no perhiperal is the same, no driver is the same.
+
+\section int Interrupts
+
+Interrupts are important (and difficult) enough for a seperate section; The
+LPC2000 provides two different interrupt types, namely IRQ and FIQ.
+All available interrupt sources can be classified as either IRQ or FIQ.
+Besides that interrupts can be vectored with the VIC, or vectored interrupt
+controller. This makes it possible to handle multiple interrupts without
+(slow) software tricks.
+
+\note
+There are two versions of the VIC controller in the LPC2000 series.
+The most devices use a 16 channel version, which is supported by ALDS. Some
+newer devices (like the LPC2300 series) use a 32 channel VIC. This is
+currently not supported by ALDS. The following section therefore only
+describes the 16 channel VIC.
+
+The VIC has a total of 16 channels, where the first channel has the highest
+priority, the last the lowest. If an interrupt occurs, the VIC will load the
+address of the handler for the interrupt with the highest priority to one
+specific register (VICVectAddr) which then can be read.
+
+\note
+As you might know the FIQ is for fast interrupts (hence the name..). Since
+you want this to be fast, you usually have only one interruptsource classified as FIQ.
+Even so, it is common practice to program the complete FIQ handler in assembler to get
+the highest performance. Therefore ALDS provides only a minimal FIQ handler;
+it's up to the programmer (you) to write a FIQ handler which is completely
+taylored to your application.
+
+\subsection intImp Software implementation
+
+When an IRQ occurs, the CPU will jump to address 0x18 as is common practice
+for an ARM CPU when an IRQ occurs. This is located in the file crt0.S, and
+location 0x18 in memory so happens to contains a branch to the function 'IRQHandler'
+This function will store the current context on the stack, then read the function
+assigned to the current active interrupt from the VIC, update the VIC and execute
+the just read function address. When this function returns, the context is restored from
+the stack and 'IRQHandler' exits.
+When a FIQ occurs, the CPU now jumps to address 0x1C, which contains a jump to the
+function 'FIQHandler'. This function does not do anything (it's merely a placeholder),
+since FIQ's are generally very specific to what the user wants. If you want a FIQ,
+the fastest way is to program the handler for it in address 0x1C, thus replacing the
+jump to 'FIQHandler'.
+
+\subsection intHowto How to use this
+
+There are several interrupt related functions proveded. First of all the low
+level interrupt enable and disable calls, which can be found in the file
+drivers/irq_ARM.S. Following example shows how to use these:
+
+\code
+#include <ALDS.h>
+#include <irq.h>
+
+int main()
+{
+    interrupt_t interruptstatus;
+
+    /* Here all interrupts are disabled */
+
+    while(init() != GOOD);
+
+    /* Now IRQ's are enabled, FIQ's not. But since there are no active sources
+       (yet), nothing will happen */
+
+    /* Now we enable the FIQ, too */
+    __enable_interrupts(FIQ);
+
+    /* To disable interrupts temporatly, use the following */
+    __store_interrupts(interruptstatus);
+
+    /* Now all interrupts are disabled, so code placed here will not be disturbed.. */
+
+    /* And restore the interruptstatus */
+    __restore_interrupts(interruptstatus);
+
+    /* Finally, to disable all interrupts: */
+    __disable_interrupts(IRQ | FIQ);
+
+    return TERM;
+}
+\endcode
+
+The __enable_interrupts() and __disable_interrupts() take
+one argument which defines which interrupttype to handle, IRQ, FIQ or both
+(OR-ed together). Calling either of those functions with, for example, IRQ,
+means that only the IRQ is altered, FIQ stays as it is.
+To temporatly disable interrupts completely, the __store_interrupts() and
+__restore_interrupts() functions are quite handy. They accept a single argument
+of type interrupt_t which is used to store or restore the interruptstatus. The
+carefull reader might notice that there is a global variable, __interrupt_status,
+which is meant for this purpose. Do note that this is meant for internal ALDS
+use. Using this in your own code can introduce serious trouble due to nested
+__store_interrupts() and __restore_interrupts() calls.
+
+\note When HANDLE_SWI and RUNMODE_USER are both enabled (see the file
+config.h), all the *_interrupt() functions are handled through a SWI call.
+Also see the file include/swi.h.
+
+There are also several functions available for the VIC. As an example, consider
+the function timer0_init(). This function enables the VIC for timer0; it
+installs a vectored IRQ.
+
+To install a non-vectored IRQ, do the following (still using the timer0_init() example):
+\code
+vic_setup(VIC_CH_TIMER0, IRQ, PRIO_NONVECTOR, NULL);
+\endcode
+Notice the PRIO_NONVECTOR. When using PRIO_NONVECTOR, the last argument is
+ignored (therefore I made it 'NULL').
+To make this usefull, an unvectored IRQ handler has to be created. By default this
+is __HaltIrq(), but this function is only meant as a placeholder (it sends a
+message on de debug console and then halts program execution).
+To change the unvectored IRQ handler, call vic_setdefaulthandler() with your
+function as it's argument.
+
+To get a FIQ, do the following:
+\code
+vic_setup(VIC_CH_TIMER0, FIQ, PRIO_NONVECTOR, NULL);
+\endcode
+In this case a non-vectored FIQ is installed. It is not possible to get a
+vectored FIQ; the VIC doesn't support it, and it wouldn't be really usefull
+anyways due to the very nature of a FIQ.
+When a FIQ fires, the function __HaltFiq() will be
+called, which halts program execution. It should be replaced by your code to
+make it usefull. You can do this inside the __HaltFiq() function in C code, but it
+would be better (perfomance-wise) to do this directly in assembler at the FIQ
+vector address, 0x1c. see the file crt0.S for this.
+
+\subsection intNested Nested interrupts
+
+There are two macro's available called __enable_nested_interrupts() and
+__disable_nested_interrupts() which can be used to get nested interrupts. These
+macro's should only be called from an ISR routine, and always in pairs. When
+__enable_nested_interrupts() is called from an ISR, all VIC sources with the
+same and lower priority as the one active at that time are disabled, so only
+higher priority sources can take over.
+
+\subsection intPrio Interrupt priorities
+
+The priorities of the different IRQ's assigned to the VIC are currently
+hardcoded. These are located in the file include/vic.h, the PRIO_x defines.
+This is due to change in a future ALDS release.
+
+\section exhand Exception handling
+
+A very valuable tool when debugging code on an ARM based system is good
+exception handlers. ALDS aims to provide these. The file config.h contains
+a configurationitem CRASHACTION which configures what to do when the system
+crashes (e.g. an exception occurs or the program terminates).
+This setting is a combination (OR-ed together) of one or more of the
+following values
+
+ - C_REBOOT<br>
+     Reboot. When any of the following bits are set, the reboot happens after these are done.
+ - C_CALLBACK<br>
+     Call the callback_crash() function. This can be used by the user to add customised code
+     to be executed after a crash.
+ - C_WARN<br>
+     Issue a warning on the debug console.
+ - C_CONTEXT<br>
+     Print the CPU context as it was during the crash.
+ - C_TRACE<br>
+     Do a backtrace on the context as it was during the crash (this only
+     works if C_CONTEXT is also enabled).
+
+By default all these settings are enabled.
+
+Note that for the backtrace to work, the code must be compiled with the
+'-mpoke-function-name' flag. This adds the functionname to the resulting
+programcode, which in turn is used for functionname lookup during the
+bactrace. This setting is enabled by default (see the Makefile, setting
+'DBG')
+
+\section errcod Error codes
+
+As you might have noticed from the examples above, several errorcodes have
+been defined, like GOOD and TERM. These can be found in the file include/err.h. A
+typedef is also provided which should be used when any of these errorcodes
+is used; error_t.
+A function which returns an errorcode should therefore be defined as
+follows:
+\code
+error_t foo(void);
+\endcode
+
+Same goes for variables meant for holding errorcodes.
+
+\section mem Memory
+
+When developing code on a 'normal' PC, memory layout is generally of little
+intrest. However, when doing embedded system development on a system where
+memory is scarce, it is very important to know how your memory is layed out.
+The lpc2000, as most ARM CPU's, has its RAM startaddress at 0x4000000. Below
+that you'll find the flash, and completely at the beginning the interrupt
+vector table. From 0x4000000 and up there is the RAM, followed by a piece of
+reserved address space. Completely at the top of the address space are the
+perhiperals. Take a look at the LPC2000 MCU datasheet you're using for the
+exact details.
+
+\subsection memcode Code
+
+The actual ALDS code is spread out in several sections, each defined in the
+linkerscript (see the file Linkerscript). The following sections exist:
+
+ - .startup<br>
+     Startup code, see the file crt0.S, ".section .startup"
+ - .text<br>
+     The program code
+ - .rodata<br>
+     Read only data
+ - .data<br>
+     Initialisation values for global variables
+ - .bss<br>
+     This is used to store uninitialised variables (so it takes space, but nothing's there).
+     We clear it at startup so that all uninitialised variables are zero (see ctr0.S)
+ - stack<br>
+     The stack
+
+Locations depend on wheter the code runs from ram or rom(flash):
+
+<table border="1" cellspacing="0" cellpadding="0">
+<tr>
+ <td><b>section</b></td><td><b>ram</b><td></td><b>rom</b></td>
+</tr>
+<tr>
+ <td>.startup</td><td>ram 1)</td><td>rom</td>
+</tr>
+<tr>
+ <td>.text</td><td>ram</td><td>rom</td>
+</tr>
+<tr>
+ <td>.rodata</td><td>ram</td><td>rom</td>
+</tr>
+<tr>
+ <td>.data</td><td>ram</td><td>rom 2)</td>
+</tr>
+<tr>
+ <td>.bss</td><td>ram</td><td>ram</td>
+</tr>
+<tr>
+ <td>stack</td><td>ram</td><td>ram</td>
+</tr>
+</table>
+
+1) To make this work, the interrupvector is remapped during startup using
+   MEMMAP, see crt0.S<br>
+2) This is copied from rom to ram during startup, see crt0.S
+
+Now, consider the following (bogus) code:
+\code
+const int var1=1;               /* Goes into .rodata */
+int var2=2;                     /* Goes into .data */
+int var3;                       /* Goes into .bss */
+
+int bla()
+{
+    /* Everything here is stored on the stack (even the 'const' one) */
+    const int var4=4;
+    int var5=5;
+    int var6;
+    /* EXCEPT these */
+    static int var7=7;          /* Goes into <- .data */
+    static const int var8=8;    /* Goes into <- .rodata */
+}
+\endcode
+
+As you can see, all variables declared inside a function except the 'static' ones are stored on the stack
+(and thus don't show up in the map file or the readelf output).
+\subsection memstack The stack
+
+The stack is located at the top of the RAM, so location depends
+on the RAM size, as follows: __stack_start__ == 0x40000000 + ram size. From
+there it 'grows' down. The following image shows the stacklayout:
+
+\image html stack.png
+
+Stack sizes are configurable in config.h,
+default sizes are:
+
+ - FIQ		4 bytes
+ - IRQ		256 bytes
+ - Supervisor	12 bytes
+ - Abort	24 bytes
+ - Undefined	24 bytes
+ - System/User	256 bytes
+
+This is a farly large setup which should be enough for most applications.
+Note that the stacksize should be a value which can be divided by four
+(one word uses 4 bytes). A stack of 0 should not be used unless you are
+absolutely sure you never use that runmode.
+
+\note The Supervisor stack is set to 12 bytes (3 words) when HANDLE_SWI is
+set (see the file config.h).
+
+\note When C_CONTEXT is set (see the file config.h), stacksizes of the abort
+and undefined modes are set to 24 bytes (6 words).
+
+\subsection memstackover Stack overflow
+
+There's no such thing as a stack overflow warning; if your program uses
+more stack than available, it will crash (if your lucky, that is..).
+\note If your program already uses more stack than available during linktime (e.g. not counting dynamicly allocated stuff), the linker will complain that there's not enough space.
+When compiling code, the output will show the size of the resulting binary,
+for example:
+
+\code
+    Compilation for an LPC2103 MCU finished. Resulting size:
+       text    data     bss     dec     hex filename
+     0x1eec     0x0    0x3c    7976    1f28 ALDS.elf
+\endcode
+
+Here the value below 'dec' is the actual complete size, including the
+configured stacksize. Note that this means the <i>reserved</i> stackspace; a
+program can use more stack than that if it needs it.
+\note The 'text' part here contains the .startup, .text and .rodata sections,
+the 'data' part the .data section and the 'bss' part the .bss and stack sections.
+
+\subsection memlayout Changing the memory layout
+
+The file config.h contains some settings to change the locations of the sections
+located in RAM, namely .data, .bss and the stack. These settings are meant for
+those rare applications where the memory layout has to be altered. One example
+is a self-programmed bootloader. Related to this is the usage of the IAP
+functions (see include/iap.h); these functions use the top 32 bytes of RAM,
+thus the stack has to move down 32 bytes. This can be done by setting
+STACK_OFFSET in config.h to 32.
+
+\subsection malloc Memory allocation
+
+The standard malloc() and free() calls (and friends) can be used in combination
+with ALDS; use them as you would on a normal PC.
+Note that this is usually a bit overkill for such a small system as the LPC2000,
+especially when one considers the fact that the standard malloc() and free()
+functions are quite large.
+ALDS currently doesn't have it's own version of these functions, but a future
+version might contain a smaller (and thus simpler) implementation, making
+malloc() and free() usage more usefull.
+
+\note
+The memory layout settings in config.h can mess up the malloc functionality;
+be cautious here!
+
+\section board Board support code
+
+ALDS currently contains code for two development boards, namely the HvU 2.3 and
+HvU 3.2 boards. See the config.h file, setting BOARD to set the board you have.
+Next, include the board.h file. example:
+
+\code
+#include <ALDS.h>
+#include <board.h>
+
+int main()
+{
+    while(init() != GOOD);
+
+    /* Following is defined if the buzzer code is compiled in */
+    #ifdef BOARD_HAS_BUZZER
+    buzzer_init();
+    beep();
+    #endif
+
+    return TERM;
+}
+\endcode
+
+Currently there are four drivers, namely the buzzer, leds, keys and the HD44780
+compatible LCD. Depending on the BOARD setting in config.h, some or all of these
+are available. Each driver sets a define which can be used to test wheter a
+driver is available at compile-time, as shown in the example above for the buzzer.
+
+\section addmcu Adding support for a new MCU
+
+Adding support for a new LPC21xx based MCU is relatively simple. To keep the
+code relatively simple, each perhiperal driver by itsself decides wheter it
+supports the current MCU or not. To add support for a new LPC21xx mcu, do the
+following:
+
+ - Check the file drivers/mcu_select.h. A define for the MCU name should exist,
+   and the RAM and ROM sizes and clockparameters must be specified.
+ - As said, each perhiperal driver on it's own decides wheter it supports the
+   current MCU; therefore each driver has to be reviewed.
+ - Finally, check the file scripts/openocd_config; at the bottom of this file
+   the flashtype is selected, which depends on the MCU in use. Make sure the
+   new MCU is added here.
+
+*/

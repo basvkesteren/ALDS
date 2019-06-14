@@ -1,0 +1,15 @@
+
+    Debugging
+
+Here are some notes on the new debugging stuff (openOCD).
+
+1. Always make sure the MCU you compiled the code for matches the MCU your actually using. openOCD won't check this and happily load it anyways
+   (and in some cases it can even work (partly))
+2. For flash debugging, the program must be loaded and running on the target before you start 'make debug'. If the program is not loaded,
+   or not running, GDB will hang on the console window.
+   It would be fairly easy to automate the loading, so a call to make debug would load and debug. However, this can cause a lot of unneeded
+   flash writes (what if you want to debug a file thats already loaded in the target?), so the loading is left as a task for the user.
+   So, to limit unneeded flashwrites, and to keep this stuff flexibel, I decided for the current approach.
+   NOTE: flash loading using openOCD (as make load does) is somewhat unreliable. You're better of using the serial bootloader stuff.
+
+    2006, Bastiaan van Kesteren <bastiaanvankesteren@gmail.com>
