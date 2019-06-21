@@ -35,7 +35,6 @@ void ringbuffer_init(ringbufferctrl_t *ringbuffer, unsigned char *buffer, unsign
     ringbuffer->length=bufferlength;
     ringbuffer->readpos=0;
     ringbuffer->writepos=0;
-    ringbuffer->hasdata=0;
 }
 
 size_t ringbuffer_write(ringbufferctrl_t *ringbuffer, const void *pointer, const size_t size, const size_t length)
@@ -73,9 +72,6 @@ size_t ringbuffer_write(ringbufferctrl_t *ringbuffer, const void *pointer, const
         }
     }
 
-    /* There's data in the buffer */
-    ringbuffer->hasdata = 1;
-
     return written / size;
 }
 
@@ -92,16 +88,13 @@ signed short ringbuffer_peek(ringbufferctrl_t *ringbuffer, const size_t offset)
     dprint("ringbuffer_peek(): offset = %i, readpos = %i, writepos = %i, free = %i\n\r", offset, ringbuffer->readpos, ringbuffer->writepos, ringbuffer_getfreebytes(ringbuffer));
     #endif
 
-    if(offset < 0 || offset >= ringbuffer->length) {
-        /* This will never fit */
+    if(offset < 0 || offset >= ringbuffer->length || ringbuffer_isempty(ringbuffer)) {
+        /* Invalid offset, or no data at all */
         return -1;
     }
 
     /* Figure out what position to read from */
-    peekpos = ringbuffer->readpos + offset;
-    if(peekpos >= ringbuffer->length) {
-        peekpos -= ringbuffer->length;
-    }
+    peekpos = (ringbuffer->readpos + offset) % ringbuffer->length;
 
     if(ringbuffer->writepos > ringbuffer->readpos && peekpos >= ringbuffer->writepos) {
         /* Readpointer is before writepointer, thus peekpos must also be before writepointer */
@@ -135,31 +128,17 @@ size_t ringbuffer_read(ringbufferctrl_t *ringbuffer, void *pointer, const size_t
     dprint("ringbuffer_read(): toread = %i, readpos = %i, writepos = %i, free = %i\n\r", toread, ringbuffer->readpos, ringbuffer->writepos, ringbuffer_getfreebytes(ringbuffer));
     #endif
 
-    if(toread > ringbuffer->length - ringbuffer_getfreebytes(ringbuffer)) {
-        #if RINGBUFFER_WHENREADOVERFLOW_SHRINK
-        /* Oops.. trying to read more than available */
-        #ifdef DEBUG_RINGBUFFER
-        dprint("ringbuffer_read(): Too much data, shrink! (was %i, is now %i)\n\r",toread,ringbuffer->length - ringbuffer_getfreebytes());
-        #endif
-        toread = ringbuffer->length - ringbuffer_getfreebytes(ringbuffer);
-        /* Ringbuffer will be empty when we're done here */
-        ringbuffer->hasdata = 0;
-        #else
+    if(toread > ringbuffer_getusedbytes(ringbuffer)) {
         /* Do nothing */
         #ifdef ringbufferdebug
         DEBUG("ringbuffer_read(): too much data, leave\n\r");
         #endif
         return 0;
-        #endif
-    }
-    else if(toread == ringbuffer->length - ringbuffer_getfreebytes(ringbuffer)) {
-        /* Ringbuffer will be empty when we're done here */
-        ringbuffer->hasdata = 0;
     }
 
     while(read < toread) {
         /* Read byte.. */
-        buffer[read]=ringbuffer->data[ringbuffer->readpos];
+        buffer[read] = ringbuffer->data[ringbuffer->readpos];
         read++;
         /* And advance ringbuffer pointer */
         ringbuffer->readpos++;
@@ -171,34 +150,6 @@ size_t ringbuffer_read(ringbufferctrl_t *ringbuffer, void *pointer, const size_t
     return read / size;
 }
 
-static unsigned int ringbuffer_toskip(ringbufferctrl_t *ringbuffer, const size_t size, const size_t length)
-{
-    unsigned int toskip;
-
-    /* Figure out how much bytes we have to skip */
-    toskip = length * size;
-
-    #ifdef DEBUG_RINGBUFFER
-    dprint("ringbuffer_toskip(): toskip=%i, readpos = %i, writepos = %i, free = %i\n\r",toskip, ringbuffer->readpos, ringbuffer->writepos, ringbuffer_getfreebytes(ringbuffer));
-    #endif
-
-    if(toskip > ringbuffer->length - ringbuffer_getfreebytes(ringbuffer)) {
-        /* Oops.. trying to skip more than available */
-        #ifdef DEBUG_RINGBUFFER
-        dprint("ringbuffer_toskip(): too much data, shrink! (was %i, is now %i)\n\r",toskip,ringbuffer->length - ringbuffer_getfreebytes(ringbuffer));
-        #endif
-        toskip = ringbuffer->length - ringbuffer_getfreebytes(ringbuffer);
-        /* Ringbuffer will be empty when we're done here */
-        ringbuffer->hasdata = 0;
-    }
-    else if(toskip == ringbuffer->length - ringbuffer_getfreebytes(ringbuffer)) {
-        /* Ringbuffer will be empty when we're done here */
-        ringbuffer->hasdata = 0;
-    }
-
-    return toskip;
-}
-
 size_t ringbuffer_skip(ringbufferctrl_t *ringbuffer, const size_t size, const size_t length)
 /**
   Skip 'length' entries of 'size' size (iow, advance the read-pointer).
@@ -207,9 +158,15 @@ size_t ringbuffer_skip(ringbufferctrl_t *ringbuffer, const size_t size, const si
 {
     unsigned int toskip;
 
-    toskip = ringbuffer_toskip(ringbuffer, size, length);
+    /* Figure out how much bytes we have to skip */
+    toskip = length * size;
 
-    if(ringbuffer->readpos + toskip >= ringbuffer->length) {
+    if(toskip > ringbuffer_getusedbytes(ringbuffer)) {
+        /* Oops.. trying to skip more than available. We skip as much as possible, or iow empty the ringbuffer */
+        toskip = ringbuffer_getusedbytes(ringbuffer);
+        ringbuffer->readpos = ringbuffer->writepos;
+    }
+    else if(ringbuffer->readpos + toskip >= ringbuffer->length) {
         ringbuffer->readpos = toskip - (ringbuffer->length - ringbuffer->readpos);
     }
     else {
@@ -227,9 +184,15 @@ size_t ringbuffer_revert(ringbufferctrl_t *ringbuffer, const size_t size, const 
 {
     unsigned int toskip;
 
-    toskip = ringbuffer_toskip(ringbuffer, size, length);
+    /* Figure out how much bytes we have to skip */
+    toskip = length * size;
 
-    if(toskip > ringbuffer->writepos) {
+    if(toskip > ringbuffer_getusedbytes(ringbuffer)) {
+        /* Oops.. trying to skip more than available. We skip as much as possible, or iow empty the ringbuffer */
+        toskip = ringbuffer_getusedbytes(ringbuffer);
+        ringbuffer->writepos = ringbuffer->readpos;
+    }
+    else if(toskip > ringbuffer->writepos) {
         ringbuffer->writepos = ringbuffer->length - (toskip - ringbuffer->writepos);
     }
     else {
@@ -244,9 +207,15 @@ unsigned int ringbuffer_getfreebytes(const ringbufferctrl_t *ringbuffer)
   Return amount of free bytes in ringbuffer
 */
 {
-    /* Data from readpos to writepos is unhandled. No data should be written there.
-       So there are two cases possible; readpos is before or after writepos: */
-    if(ringbuffer->writepos > ringbuffer->readpos) {
+    if(ringbuffer->readpos == ringbuffer->writepos) {
+        /* Ringbuffer is empty */
+        return ringbuffer->length-1;
+    }
+    else if((ringbuffer->writepos+1)%ringbuffer->length == ringbuffer->readpos) {
+        /* One byte remaining between readpos and writepos: ringbuffer is full */
+        return 0;
+    }
+    else if(ringbuffer->writepos > ringbuffer->readpos) {
         /*  [   start       ]
             [               ]
             [   readpos     ]   -\
@@ -255,22 +224,7 @@ unsigned int ringbuffer_getfreebytes(const ringbufferctrl_t *ringbuffer)
             [               ]
             [   length      ]
         */
-        return ringbuffer->readpos + (ringbuffer->length - ringbuffer->writepos);
-    }
-    else if(ringbuffer->writepos == ringbuffer->readpos) {
-        /* This is a tricky one; is the buffer completely empty or completely full? */
-        if(ringbuffer->hasdata) {
-            #ifdef DEBUG_RINGBUFFER
-            dprint("ringbuffer_getfreebytes(): Pointer clash, hasdata is SET: buffer full\n\r");
-            #endif
-            return 0;
-        }
-        else {
-            #ifdef DEBUG_RINGBUFFER
-            dprint("ringbuffer_getfreebytes(): Pointer clash, hasdata is NOT SET: buffer empty\n\r");
-            #endif
-            return ringbuffer->length;
-        }
+        return (ringbuffer->readpos + (ringbuffer->length - ringbuffer->writepos)) - 1;
     }
     else {
         /*  [   start       ]    |
@@ -281,7 +235,7 @@ unsigned int ringbuffer_getfreebytes(const ringbufferctrl_t *ringbuffer)
             [               ]    | -> used, unread data
             [   length      ]    |
         */
-        return ringbuffer->readpos-ringbuffer->writepos;
+        return (ringbuffer->readpos-ringbuffer->writepos) - 1;
     }
 }
 
@@ -290,7 +244,20 @@ bool ringbuffer_isfull(const ringbufferctrl_t *ringbuffer)
   Return TRUE is ringbuffer is full, FALSE otherwise
 */
 {
-    if(ringbuffer->hasdata && ringbuffer->writepos == ringbuffer->readpos) {
+    if((ringbuffer->writepos+1)%ringbuffer->length == ringbuffer->readpos) {
+        /* One byte remaining between readpos and writepos: ringbuffer is full */
+        return TRUE;
+    }
+    return FALSE;
+}
+
+bool ringbuffer_isempty(const ringbufferctrl_t *ringbuffer)
+/**
+  Return TRUE is ringbuffer is empty, FALSE otherwise
+*/
+{
+    if(ringbuffer->readpos == ringbuffer->writepos) {
+        /* Ringbuffer is empty */
         return TRUE;
     }
     return FALSE;

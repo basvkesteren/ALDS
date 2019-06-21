@@ -32,6 +32,11 @@ ALDS initialization code
 
 static char resetcause;
 
+#if CODEPROTECTION
+/* By writing a special value to a special location (...) all ISP code
+   reading functions AND the complete JTAG interface are disabled. */
+const unsigned int codeprotection __attribute__ ((section(".codeprotection"))) = 0x87654321;
+#endif
 
 error_t init(bool enableirq)
 /*!

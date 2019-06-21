@@ -89,7 +89,8 @@ bool watchdog_init(const unsigned int interval)
     #endif
 
     /* Start watchdog by clearing it */
-    watchdog_clear();
+    WDFEED = 0xAA;
+    WDFEED = 0x55;
 
     return resetcaused;
 }
@@ -99,8 +100,10 @@ void watchdog_clear(void)
   Clear the watchdog counter
 */
 {
+    __store_interrupts(&__interrupt_status);
     WDFEED = 0xAA;
     WDFEED = 0x55;
+    __restore_interrupts(&__interrupt_status);
 }
 
 void watchdog_trigger(void)
@@ -110,8 +113,6 @@ void watchdog_trigger(void)
 {
     WDFEED = 0xAA;
     WDFEED = 0x00;
-
-    while(1);
 }
 
 #if __RUN_FROM_RAM

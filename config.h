@@ -129,7 +129,7 @@ Configuration and general defines
 
 /*! This defines the watchdog counter value. This is calculated with
     tPCLK x interval x 4, which results in the timeout in seconds.
-    Use a value of '0' to disable the watchdog. */
+    Range 256 - 2^32, use a value of '0' to disable the watchdog. */
 #define WATCHDOG_TIMEOUT    0
 
 /*! Some drivers contain wait-loops, used to wait for an interrupt-based event to

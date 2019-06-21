@@ -25,17 +25,11 @@ General purpose ringbuffer, the definitions
 #include <types.h>
 #include <stddef.h>
 
-/* What to do when ringbuffer_read() gets to read more than available?
-   When this is set, we read as much as available (but less than requested)
-   When not set, nothing is read and thus 0 is returned. */
-#define RINGBUFFER_WHENREADOVERFLOW_SHRINK  0
-
 typedef struct ringbufferctrl {
     unsigned char *data;            /* Points to the data */
     unsigned int length;            /* Length of buffer (data) */
-    unsigned int readpos;           /* Where we stopped reading */
-    unsigned int writepos;          /* Where we start writing */
-    unsigned char hasdata;          /* Flag used to determine wheter the buffer is empty or full when readpos equals writepos */
+    unsigned int readpos;           /* Next unread byte */
+    unsigned int writepos;          /* Next writeposition */
 } ringbufferctrl_t;
 
 typedef unsigned char ringbufferdata_t;
@@ -47,6 +41,8 @@ size_t ringbuffer_read(ringbufferctrl_t *ringbuffer, void *pointer, const size_t
 size_t ringbuffer_skip(ringbufferctrl_t *ringbuffer, const size_t size, const size_t length);
 size_t ringbuffer_revert(ringbufferctrl_t *ringbuffer, const size_t size, const size_t length);
 unsigned int ringbuffer_getfreebytes(const ringbufferctrl_t *ringbuffer);
+#define ringbuffer_getusedbytes(ringbuffer)     ((ringbuffer->length-1) - ringbuffer_getfreebytes(ringbuffer))
 bool ringbuffer_isfull(const ringbufferctrl_t *ringbuffer);
+bool ringbuffer_isempty(const ringbufferctrl_t *ringbuffer);
 
 #endif /* _RINGBUFFER_H_ */

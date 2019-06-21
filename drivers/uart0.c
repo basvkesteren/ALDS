@@ -160,6 +160,8 @@ void uart0_deinit()
 {
     /* Make Tx and Rx pins GPIO */
     PINSEL0 &= ~((3<<0) | (3<<2));
+
+    vic_disablechannel(VIC_CH_UART0);
 }
 
 void uart0_setparameters(const signed char stopbits, const signed char parity, const signed char wordlength, const signed char breakcontrol, const signed char rxtriggerlevel)
@@ -239,9 +241,14 @@ void uart0_setbaudrate(const unsigned short baudrate)
 /*!
   Set baudrate
 */
-{
+{    /* Set DLAB */
+    U0LCR |= LCR_DLAB;
+
     U0DLL = (unsigned char)baudrate;
     U0DLM = baudrate>>8;
+
+    /* Clear DLAB */
+    U0LCR &= ~LCR_DLAB;
 }
 
 void uart0_putchar(const unsigned char c)

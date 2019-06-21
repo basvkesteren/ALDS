@@ -23,6 +23,7 @@ PLL, MAM & VPB initialisation
 #include <pll.h>
 #include <irq.h>
 #include "registers.h"
+#include <debug.h>
 
 void pll_init(void)
 /*!
@@ -66,6 +67,44 @@ void pll_init(void)
 
     /* Set VPB clock */
     VPBDIV = PBSD & 0x03;
+
+    __restore_interrupts(&__interrupt_status);
+}
+
+void pll_switch(unsigned char multiplier)
+/*!
+  Change PLL settings at runtime. Tricky stuff, use with care.
+  A lot of clock-base stuff won't work after the switch (think baudrates, delays, ...)
+*/
+{
+    __store_interrupts(&__interrupt_status);
+
+    /* Disable the Memory Accelerator Module */
+    MAMCR = MAMCR_OFF;
+
+    // PLLCFG = PLLCFG_MSEL | PLLCFG_PSEL;
+    //
+    // PLLCFG_MSEL = ((PLL_MUL - 1) << 0)
+    // PLL_MUL = set in config.h, 'multiplier' here
+    //
+    // PLLCFG_PSEL = ((PLL_DIV - 1) << 5)
+    // PLL_DIV = (FCCO_MAX / (2 * CCLK))
+    // FCCO_MAX = set in mcu_select.h
+    // CCLK = (FOSC * PLL_MUL)
+    // FOSC = set in mcu_select.h
+    PLLCFG  = ((multiplier - 1) << 0) | (((FCCO_MAX / (2 * (FOSC * multiplier))) - 1) << 5);
+    /* PLL enable */
+    PLLCON  = PLLCON_PLLE;
+    /* PLL feed sequence */
+    PLLFEED = 0x000000AA;
+    PLLFEED = 0x00000055;
+    /* Wait until the PLL has locked */
+    while(!(PLLSTAT & PLLSTAT_LOCK)) { dprint(".");};
+    /* PLL enable and connect */
+    PLLCON  = PLLCON_PLLE | PLLCON_PLLC;
+    /* PLL feed sequence */
+    PLLFEED = 0x000000AA;
+    PLLFEED = 0x00000055;
 
     __restore_interrupts(&__interrupt_status);
 }

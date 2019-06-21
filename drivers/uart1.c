@@ -66,7 +66,7 @@ UART1 driver, both poll and interrupt-based versions
      UART_PARITY_1        Parity bit is always '1'
      UART_PARITY_0        Parity bit is always '0'
      UART_PARITY_NONE     Parity bit is disabled */
-#define UART1_PARITY            UART_PARITY_EVEN
+#define UART1_PARITY            UART_PARITY_NONE
 
 /*! Configure the number of stopbits. Possible values are 1 and 2. */
 #define UART1_STOPBITS          1
@@ -86,8 +86,8 @@ UART1 driver, both poll and interrupt-based versions
 #define UART1_RXTRIGGERLEVEL    UART_RX_TRIGGERLEVEL14
 
 /* PINSEL values for flowcontrol*/
-#define VAL_PINSEL0_U1FLOW  (0x5<<20)
-#define MSK_PINSEL0_U1FLOW  (0xf<<20)
+#define VAL_PINSEL0_U1FLOW      (0x5<<20)
+#define MSK_PINSEL0_U1FLOW      (0xf<<20)
 #define VAL_PINSEL0_U1FLOWRTS  (0x1<<20)
 #define MSK_PINSEL0_U1FLOWRTS  (0x3<<20)
 #define VAL_PINSEL0_U1FLOWCTS  (0x1<<22)
@@ -173,6 +173,10 @@ void uart1_deinit()
 {
     /* Make Tx and Rx pins GPIO */
     PINSEL0 &= ~((3<<16) | (3<<18));
+    /* Make RTS and CTS pins GPIO */
+    PINSEL0 &= ~MSK_PINSEL0_U1FLOW;
+
+    vic_disablechannel(VIC_CH_UART1);
 }
 
 void uart1_setparameters(const signed char stopbits, const signed char parity, const signed char wordlength, const signed char breakcontrol, const signed char rxtriggerlevel)
@@ -253,8 +257,14 @@ void uart1_setbaudrate(const unsigned short baudrate)
   Set baudrate
 */
 {
+    /* Set DLAB */
+    U1LCR |= LCR_DLAB;
+
     U1DLL = (unsigned char)baudrate;
     U1DLM = baudrate>>8;
+
+    /* Clear DLAB */
+    U1LCR &= ~LCR_DLAB;
 }
 
 void uart1_putchar(const unsigned char c)
@@ -432,7 +442,7 @@ static void uart1_intHandler(void)
   UART1 interrupt handling
 */
 {
-     switch(U1IIR & IIR_ID_MASK) {
+    switch(U1IIR & IIR_ID_MASK) {
         case IIR_ID_RDA:
         case IIR_ID_CTI:
             /* Data has been received */

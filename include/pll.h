@@ -40,6 +40,7 @@ PLL, MAM & VPB initialisation, the definitions
 
 /* Function prototypes */
 void pll_init(void);
+void pll_switch(unsigned char multiplier);
 
 #define pll_locked()    (PLLSTAT & PLLSTAT_LOCK)
 

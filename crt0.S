@@ -218,17 +218,6 @@ FIQHandler:
     FIQ_unhandled                   @ Call macro in config_crt0.S
     .endfunc
 
-#if CODEPROTECTION
-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-@ Code protection
-@  By writing a special value to a special location (...) all ISP code
-@  reading functions AND the complete JTAG interface are disabled.
-.section .codeprotection,"ax"
-    .arm
-    .align 2
-    .word 0x87654321
-#endif
-
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @ Exception-table.
 @  The ARM CPU always starts in the exception (or vector) table. Therefore
